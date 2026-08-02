@@ -1,8 +1,23 @@
+<div align="center">
+  <img src="assets/og-image.png" alt="Nothing Phone (3a) stock boot rescue" width="80%" />
+</div>
+
 # Nothing Phone (3a) bootloop recovery
 
 A documented rescue of a Nothing Phone (3a) stuck in a boot loop after a rooting attempt. This repo holds the record: the hypotheses, the commands, the evidence, and the one change that fixed it.
 
-**Result: resolved. The device boots into Android 15. No user data was wiped.**
+<div align="center">
+
+[![License](https://img.shields.io/badge/License-MIT-2f6f4f?style=for-the-badge&logo=mit)](LICENSE)
+[![Android](https://img.shields.io/badge/Target-Android%2015-2f6f4f?style=for-the-badge&logo=android)](https://developer.android.com)
+[![Qualcomm](https://img.shields.io/badge/SOC-Qualcomm-2f6f4f?style=for-the-badge&logo=qualcomm)](https://www.qualcomm.com)
+[![Fastboot](https://img.shields.io/badge/Tool-fastboot-2f6f4f?style=for-the-badge&logo=gnubash)](https://developer.android.com/tools/adb)
+[![Docs](https://img.shields.io/badge/docs-recovery%20guide-2f6f4f?style=for-the-badge)](docs/recovery-plan.md)
+
+</div>
+
+> [!NOTE]
+> Result: resolved. The device boots into Android 15. No user data was wiped.
 
 ## Quick summary
 
@@ -12,11 +27,23 @@ A documented rescue of a Nothing Phone (3a) stuck in a boot loop after a rooting
 - Fix: flashed the stock `boot` image to both A/B slots
 - Outcome: boot completed, `sys.boot_completed=1`, app data intact
 
+## Capability matrix
+
+| Capability | Before | After |
+|---|---|---|
+| Boot state | loop | normal |
+| Android version | (looping) | 15 |
+| `sys.boot_completed` | 0 (fastboot only) | 1 |
+| App data | intact | intact |
+| `init_boot` | rejected by bootloader | not flashed |
+
+## Why this matters
+
 Two findings carry the lesson.
 
-One is platform. The device is Qualcomm, not MediaTek. The AVB fingerprint decodes as `qti/qssi_64/…` and the EFS partitions (`fsc`, `fsg`, `modemst1`) match the Qualcomm layout. A Qualcomm rescue flashes `boot`, `init_boot`, `vendor_boot`, and `vbmeta`. A MediaTek rescue flashes `lk` and `preloader`. Get that wrong and nothing you do will help.
+1. **Platform matters.** The device is Qualcomm, not MediaTek. The AVB fingerprint decodes as `qti/qssi_64/...` and the EFS partitions (`fsc`, `fsg`, `modemst1`) match the Qualcomm layout. A Qualcomm rescue flashes `boot`, `init_boot`, `vendor_boot`, and `vbmeta`. A MediaTek rescue flashes `lk` and `preloader`. Get that wrong and nothing you do will help.
 
-The other is that `init_boot` never had to be flashed. The bootloader rejects a download to it with "Requested download size is more than max allowed". The partition reports `0x800000` (8 MiB) via `getvar`, and `fastboot flash` refuses anything larger. The breakage was the patched `boot` image; restoring stock `boot` to both slots was the whole fix.
+2. **`init_boot` never had to be flashed.** The bootloader rejects a download to it with "Requested download size is more than max allowed". The partition reports `0x800000` (8 MiB) via `getvar`, and `fastboot flash` refuses anything larger. The breakage was the patched `boot` image; restoring stock `boot` to both slots was the whole fix.
 
 ## Evidence
 
@@ -39,8 +66,10 @@ fastboot devices           # empty, no longer in fastboot
 
 Staged images, each checksum-verified against the build archive:
 
-- `boot.img` → `600cfdca01e779ecf5c27e4c510d711b236c60740df8126b84562672f61fbd05` (100663296 B, 96 MiB)
-- `init_boot.img` → `09ed43aedb0efcf62bd3967a36b106840a05eeb3e04b7ebc3d4d5184855dbb19` (8388608 B, 8 MiB, not flashed)
+| Image | SHA-256 | Size |
+|---|---|---|
+| `boot.img` | `600cfdca01e779ecf5c27e4c510d711b236c60740df8126b84562672f61fbd05` | 100663296 B (96 MiB) |
+| `init_boot.img` | `09ed43aedb0efcf62bd3967a36b106840a05eeb3e04b7ebc3d4d5184855dbb19` | 8388608 B (8 MiB, not flashed) |
 
 ## How it was fixed, step by step
 
@@ -61,7 +90,8 @@ Then verified the partition sizes after flashing, before any reboot.
 
 **Step 4: boot and verify.** `fastboot reboot`, poll `sys.boot_completed`, then run the evidence block above. `init_boot` was never flashed; the bootloader rejects the download, so we did not force it.
 
-The full validated plan lives in `docs/recovery-plan.md`, the evidence records in `docs/recovery-completed.md`, and a separate cross-AI review pass (which caught a `fastboot flash --slot=all` syntax error in the original draft) in `docs/cross-ai-review.md`.
+> [!WARNING]
+> The bootloader rejects `init_boot` downloads. Do not force it. Also, `fastboot flash --slot=all` is invalid on this device. Use explicit slot names: `boot_a` and `boot_b`. The cross-AI review pass caught this syntax error in the original draft.
 
 ## Reproduce
 
@@ -74,3 +104,47 @@ If a Nothing 3/3a (or another AVB+A/B Qualcomm device on Android 13+) is looping
 5. Verify partition sizes after the write, then `fastboot reboot`.
 
 This is a record of one specific rescue. Partition names and sizes vary by device; confirm yours before flashing anything.
+
+## Repository layout
+
+```text
+nothing-phone-rescue/
+  README.md                    # this file
+  LICENSE                      # MIT
+  CONTRIBUTING.md              # contribution guide
+  SECURITY.md                  # security policy
+  CODE_OF_CONDUCT.md           # code of conduct
+  .gitignore
+  assets/
+    og-image.png               # 1200x630 OG image
+  docs/
+    recovery-plan.md           # the full validated plan
+    recovery-completed.md      # evidence records
+    cross-ai-review.md         # cross-AI review pass
+  .github/
+    social-preview/
+      social-preview.png       # 1280x640 GitHub social preview
+    workflows/
+      verify.yml               # CI: blocks em-dashes, unfinished markers
+```
+
+## Documentation
+
+- [`docs/recovery-plan.md`](docs/recovery-plan.md) - the full validated plan, cheapest-first
+- [`docs/recovery-completed.md`](docs/recovery-completed.md) - evidence records and command output
+- [`docs/cross-ai-review.md`](docs/cross-ai-review.md) - cross-AI review pass (caught the `--slot=all` syntax error)
+
+## Contributing and License
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [MIT License](LICENSE)
+
+## Changelog
+
+- 2026-08-03: v1.0 - initial rescue record, assets, CI workflow, production README
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=axe01010/nothing-phone-bootloop-recovery&type=Date)](https://star-history.com/#axe01010/nothing-phone-bootloop-recovery&Date)
