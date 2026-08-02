@@ -1,4 +1,4 @@
-# Contributing to nothing-phone-rescue
+# Contributing to nothing-phone-bootloop-recovery
 
 ## What this repo is
 
