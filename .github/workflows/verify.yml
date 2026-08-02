@@ -1,0 +1,39 @@
+name: verify-content
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: verify-content-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify content
+        run: |
+          set -euo pipefail
+
+          if grep -n $'\u2014' README.md docs/*.md; then
+            echo "Em dash found. Rewrite using commas, colons, or periods." >&2
+            exit 1
+          fi
+
+          if grep -nE '\[\[|TBD:|<!--' README.md docs/*.md; then
+            echo "Unfinished edit marker found in markdown." >&2
+            exit 1
+          fi
+
+          count=$(grep -oE '[0-9a-f]{64}' docs/recovery-completed.md | wc -l || true)
+          if [ "$count" -lt 2 ]; then
+            echo "Expected at least 2 full 64-hex checksums in docs/recovery-completed.md, found $count." >&2
+            exit 1
+          fi
+
+          echo "Content checks passed."
