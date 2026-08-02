@@ -6,19 +6,71 @@ A documented rescue of a Nothing Phone (3a) stuck in a boot loop after a rooting
 
 ## Quick summary
 
-- Device: Nothing Phone (3a), Nothing OS 3.2, build `Asteroids_V3.2-601013-1406`
-- Symptom: after a root attempt, the phone only answered in `adb`/`fastboot`.
-- Root cause: a bad boot image put the device in a boot loop.
-- Fix: flashed the stock `boot` image back.
+- Device: Nothing Phone (3a), Nothing OS 3.2, build `Asteroids_V3.2-251013-1406`
+- Symptom: after a root attempt, the phone only answered in `fastboot`. The screen sat on the bootloader's "start boot" prompt
+- Root cause: the rooted boot image failed early boot, so the device looped
+- Fix: flashed the stock `boot` image to both A/B slots
+- Outcome: boot completed, `sys.boot_completed=1`, app data intact
+
+Two findings carry the lesson.
+
+One is platform. The device is Qualcomm, not MediaTek. The AVB fingerprint decodes as `qti/qssi_64/…` and the EFS partitions (`fsc`, `fsg`, `modemst1`) match the Qualcomm layout. A Qualcomm rescue flashes `boot`, `init_boot`, `vendor_boot`, and `vbmeta`. A MediaTek rescue flashes `lk` and `preloader`. Get that wrong and nothing you do will help.
+
+The other is that `init_boot` never had to be flashed. The bootloader rejects a download to it with "Requested download size is more than max allowed". The partition reports `0x800000` (8 MiB) via `getvar`, and `fastboot flash` refuses anything larger. The breakage was the patched `boot` image; restoring stock `boot` to both slots was the whole fix.
 
 ## Evidence
 
+Before the restore:
+
 ```bash
-adb devices
-adb shell getprop ro.build.version.release
-adb shell getprop sys.boot_completed
+fastboot devices           # present, device only responds in fastboot
+# USB mode 18d1:d00d (fastboot)
 ```
 
-## What worked
+After the restore:
 
-The full record: [recovery-plan.md](docs/recovery-plan.md), [recovery-completed.md](docs/recovery-completed.md), [cross-ai-review.md](docs/cross-ai-review.md).
+```bash
+adb devices                # <redacted serial>  device
+lsusb                      # 18d1:4e11 (Android OS mode)
+adb shell getprop ro.build.version.release    # 15
+adb shell getprop sys.boot_completed          # 1
+fastboot devices           # empty, no longer in fastboot
+```
+
+Staged images, each checksum-verified against the build archive:
+
+- `boot.img` → `600cfdca01c779ecf5c27e4c510d711b236c60740df8126b84562672f61fbd05` (100663296 B, 96 MiB)
+- `init_boot.img` → `09ed42aedb0efcf62bd3967a36b106840a05ebbf3e04b7ebc3d4d5184855dbb19` (8388608 B, 8 MiB, not flashed)
+
+## How it was fixed, step by step
+
+The plan ran cheapest-first, and no step wrote to the phone until cheaper steps had failed with fresh command output.
+
+**Step 1: prove the link (no writes).** `fastboot getvar` answered within the time limit and the partition sizes matched the staged build. A mismatch meant stop and re-stage.
+
+**Step 2: test the "start boot" prompt (no writes).** `fastboot reboot` and watch. On this build the "start boot" screen is a one-time wait for power, not a crash loop.
+
+**Step 3: restore stock boot, both slots (writes).** Flashed the stock image, one slot at a time, using explicit slot names:
+
+```bash
+fastboot flash boot_a /path/to/stock/boot.img
+fastboot flash boot_b /path/to/stock/boot.img
+```
+
+Then verified the partition sizes after the flash, before any reboot.
+
+**Step 4: boot and verify.** `fastboot reboot`, poll `sys.boot_completed`, then capture the evidence above. `init_boot` was never flashed; the bootloader rejects the download, so we did not force it.
+
+The full validated plan lives in `docs/recovery-plan.md`, the evidence record in `docs/recovery-computed.md`, and a separate cross-AI review pass (which caught a `fastboot flash --slot=all` syntax error in a draft) in `docs/cross-ai-review.md`.
+
+## Reproduce
+
+If a Nothing 3/3a (or another AVB+A/B device) is looping after a root attempt:
+
+1. Put the device in `fastboot`. Confirm it is Qualcomm, not MediaTek (check EFS partitions or the `qti/qssi` AVB fingerprint).
+2. Stage stock `boot.img` and `init_boot.img` for the exact build on the device. Verify SHA-256 against your own archive.
+3. Run the no-write tests first. A "start boot" screen may be a one-time prompt, not a loop.
+4. Flash stock `boot` to both slots with explicit slot names (`boot_a`, `boot_b`). Do not invent `--slot=all`.
+5. Verify partition sizes after the write, then `fastboot reboot`.
+
+This is a record of one specific rescue. Partition names and sizes vary by device; confirm yours before flashing anything.
