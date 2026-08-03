@@ -140,6 +140,9 @@ nothing-phone-bootloop-recovery/
 
 - [`templates/README.template.md`](templates/README.template.md) - copy this to start the next rescue-guide repo
 - [@axe01010](https://github.com/axe01010) - more no-data-loss guides in the pipeline
+- [Portfolio](https://axe01010.github.io/portfolio-v2/) - unified project showcase
+- [Security research hub](https://github.com/axe01010/security-research-hub) - Android/APK analysis docs
+- [Cursor Android toolkit](https://github.com/axe01010/cursor-android-toolkit) - run Cursor on Android via Termux
 
 ## Contributing and License
 
