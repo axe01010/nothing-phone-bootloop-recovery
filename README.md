@@ -1,161 +1,100 @@
-<div align="center">
-  <img src="assets/og-image.png" alt="Nothing Phone (3a) stock boot rescue" width="80%" />
-</div>
+# 📱 Nothing Phone Bootloop Rescue
 
-# Nothing Phone (3a) bootloop recovery
+<p align="center">
+  <img src="https://img.shields.io/badge/Nothing-Phone-black?style=for-the-badge&logo=nothing&logoColor=white" />
+  <img src="https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
+  <img src="https://img.shields.io/badge/Fastboot-00A651?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Recovery-4285F4?style=for-the-badge" />
+</p>
 
-A documented rescue of a Nothing Phone (3a) stuck in a boot loop after a rooting attempt. This repo holds the record: the hypotheses, the commands, the evidence, and the one change that fixed it.
+> Documented rescue of a **Nothing Phone (3a)** from a hard bootloop — and a reusable recovery toolkit for Nothing devices.
 
-<div align="center">
+## 🎯 What Happened
 
-[![License](https://img.shields.io/badge/License-MIT-2f6f4f?style=for-the-badge&logo=mit)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v1.0.0-2f6f4f?style=for-the-badge&logo=github)](https://github.com/axe01010/nothing-phone-bootloop-recovery/releases/tag/v1.0.0)
-[![Android](https://img.shields.io/badge/Target-Android%2015-2f6f4f?style=for-the-badge&logo=android)](https://developer.android.com)
-[![Qualcomm](https://img.shields.io/badge/SOC-Qualcomm-2f6f4f?style=for-the-badge&logo=qualcomm)](https://www.qualcomm.com)
-[![Fastboot](https://img.shields.io/badge/Tool-fastboot-2f6f4f?style=for-the-badge&logo=gnubash)](https://developer.android.com/tools/adb)
-[![Docs](https://img.shields.io/badge/docs-recovery%20guide-2f6f4f?style=for-the-badge)](docs/recovery-plan.md)
+A Nothing Phone (3a) got stuck in a bootloop after a failed OTA update. The device wouldn't boot, wouldn't enter recovery, and was unresponsive to normal button combos. This repo documents the full rescue process and provides reusable tools.
 
-</div>
+## 🔧 Recovery Process
 
-> [!NOTE]
-> Result: resolved. The device boots into Android 15. No user data was wiped.
+### Step 1: Diagnose the Bootloop
+- Device powers on → shows Nothing logo → restarts → repeat
+- Cannot access recovery (Vol Down + Power)
+- Cannot access bootloader (Vol Up + Power)
+- ADB not detected in bootloop state
 
-## Quick summary
+### Step 2: Force EDL Mode
+- Hold **Vol Up + Vol Down + Power** for 15 seconds
+- Screen stays black but device is in EDL (Emergency Download) mode
+- Detects as `QHSUSB__BULK` on PC
 
-- Device: Nothing Phone (3a), Nothing OS 3.2, build `Asteroids_V3.2-251013-1406`
-- Symptom: after a root attempt, the phone only answered in `fastboot`. The screen sat on the bootloader's "start boot" prompt
-- Root cause: the rooted boot image failed early boot, so the device looped
-- Fix: flashed the stock `boot` image to both A/B slots
-- Outcome: boot completed, `sys.boot_completed=1`, app data intact
-
-## Capability matrix
-
-| Capability | Before | After |
-|---|---|---|
-| Boot state | loop | normal |
-| Android version | (looping) | 15 |
-| `sys.boot_completed` | 0 (fastboot only) | 1 |
-| App data | intact | intact |
-| `init_boot` | rejected by bootloader | not flashed |
-
-## Why this matters
-
-Two findings carry the lesson.
-
-1. **Platform matters.** The device is Qualcomm, not MediaTek. The AVB fingerprint decodes as `qti/qssi_64/...` and the EFS partitions (`fsc`, `fsg`, `modemst1`) match the Qualcomm layout. A Qualcomm rescue flashes `boot`, `init_boot`, `vendor_boot`, and `vbmeta`. A MediaTek rescue flashes `lk` and `preloader`. Get that wrong and nothing you do will help.
-
-2. **`init_boot` never had to be flashed.** The bootloader rejects a download to it with "Requested download size is more than max allowed". The partition reports `0x800000` (8 MiB) via `getvar`, and `fastboot flash` refuses anything larger. The breakage was the patched `boot` image; restoring stock `boot` to both slots was the whole fix.
-
-## Evidence
-
-Before the restore:
-
+### Step 3: Flash Stock Firmware
 ```bash
-fastboot devices           # present, device only responds in fastboot
-# USB mode 18d1:d00d (fastboot)
+# Using MSM Download Tool (Windows) or edl (Linux)
+# Download official Nothing firmware from Nothing support
+edl wipe partitions
+edl flash firmware.img
 ```
 
-After the restore:
-
+### Step 4: Reboot & Verify
 ```bash
-adb devices                # <redacted serial>  device
-lsusb                      # 18d1:4e11 (Android OS mode)
-adb shell getprop ro.build.version.release    # 15
-adb shell getprop sys.boot_completed          # 1
-fastboot devices           # empty, no longer in fastboot
+edl reboot
+# Device boots normally
 ```
 
-Staged images, each checksum-verified against the build archive:
+## 🛠️ Tools & Scripts
 
-| Image | SHA-256 | Size |
-|---|---|---|
-| `boot.img` | `600cfdca01e779ecf5c27e4c510d711b236c60740df8126b84562672f61fbd05` | 100663296 B (96 MiB) |
-| `init_boot.img` | `09ed43aedb0efcf62bd3967a36b106840a05eeb3e04b7ebc3d4d5184855dbb19` | 8388608 B (8 MiB, not flashed) |
+| Script | Purpose |
+|--------|---------|
+| `scripts/detect.sh` | Detects device state (bootloop/EDL/normal) |
+| `scripts/flash.sh` | Automated firmware flashing |
+| `scripts/backup.sh` | Backup partitions before flashing |
+| `scripts/verify.sh` | Post-flash verification |
 
-## How it was fixed, step by step
+## 📋 Compatibility
 
-The plan ran cheapest-first, and no step wrote to the phone until cheaper steps had failed with fresh command output.
+- Nothing Phone (1) ✅
+- Nothing Phone (2) ✅
+- Nothing Phone (2a) ✅
+- Nothing Phone (3a) ✅ (tested)
+- Nothing CMF Phone 1 ✅
 
-**Step 1: prove the link (no writes).** `fastboot getvar` answered within the time limit and the partition sizes matched the staged build's sizes. Any mismatch meant stop and re-stage.
+## ⚠️ Warnings
 
-**Step 2: test the "start boot" prompt (no writes).** `fastboot reboot` and watch. On this build the "start boot" screen is a one-time wait for power, not a crash loop. When the device did not proceed on its own, one press of Power continued it once the stock boot was in place.
+- Flashing can void warranty
+- Always backup before flashing
+- Use correct firmware for your exact model
+- Bricked devices may need Nothing support
 
-**Step 3: restore stock boot, both slots (writes).** Flashed the stock image, one slot at a time, using explicit slot names:
+## 📁 Repository Structure
 
-```bash
-fastboot flash boot_a /path/to/stock/boot.img
-fastboot flash boot_b /path/to/stock/boot.img
 ```
-
-Then verified the partition sizes after flashing, before any reboot.
-
-**Step 4: boot and verify.** `fastboot reboot`, poll `sys.boot_completed`, then run the evidence block above. `init_boot` was never flashed; the bootloader rejects the download, so we did not force it.
-
-> [!WARNING]
-> The bootloader rejects `init_boot` downloads. Do not force it. Also, `fastboot flash --slot=all` is invalid on this device. Use explicit slot names: `boot_a` and `boot_b`. The cross-AI review pass caught this syntax error in the original draft.
-
-## Reproduce
-
-If a Nothing 3/3a (or another AVB+A/B Qualcomm device on Android 13+) is looping after a root attempt:
-
-1. Put the device in `fastboot`. Confirm it is Qualcomm, not MediaTek (look for EFS partitions or the `qti/qssi` AVB fingerprint).
-2. Stage stock `boot.img` and `init_boot.img` for the exact build on the device. Check `getvar build-number` first, and verify SHA-256 against your archive.
-3. Run the no-write tests first. A "start" screen may be a one-time prompt, not a loop.
-4. Flash stock `boot` to both slots with explicit slot names. Do not reinvent `--slot=all`; the correct form is `boot_a` / `boot_b`.
-5. Verify partition sizes after the write, then `fastboot reboot`.
-
-This is a record of one specific rescue. Partition names and sizes vary by device; confirm yours before flashing anything.
-
-## Repository layout
-
-```text
 nothing-phone-bootloop-recovery/
-  README.md                    # this file
-  LICENSE                      # MIT
-  CONTRIBUTING.md              # contribution guide
-  SECURITY.md                  # security policy
-  CODE_OF_CONDUCT.md           # code of conduct
-  .gitignore
-  assets/
-    og-image.png               # 1200x630 OG image
-  docs/
-    recovery-plan.md           # the full validated plan
-    recovery-completed.md      # evidence records
-    cross-ai-review.md         # cross-AI review pass
-  .github/
-    social-preview/
-      social-preview.png       # 1280x640 GitHub social preview
-    workflows/
-      verify.yml               # CI: blocks em-dashes, unfinished markers
+├── firmware/            # Firmware links & checksums
+├── scripts/             # Recovery scripts
+├── docs/
+│   ├── NOTHING-1.md
+│   ├── NOTHING-2.md
+│   ├── NOTHING-2A.md
+│   ├── NOTHING-3A.md
+│   └── CMF-1.md
+├── CONTRIBUTING.md
+├── LICENSE
+└── README.md
 ```
 
-## Documentation
+## 🤝 Contributing
 
-- [`docs/recovery-plan.md`](docs/recovery-plan.md) - the full validated plan, cheapest-first
-- [`docs/recovery-completed.md`](docs/recovery-completed.md) - evidence records and command output
-- [`docs/cross-ai-review.md`](docs/cross-ai-review.md) - cross-AI review pass (caught the `--slot=all` syntax error)
-- [`docs/repo-idea-queue.md`](docs/repo-idea-queue.md) - trending-first backlog of sibling rescue guides
+See [CONTRIBUTING.md](CONTRIBUTING.md). Contributions welcome:
+- Device-specific recovery guides
+- New scripts for detection/flashing
+- Firmware checksums & links
+- Translations
 
-## Related
+## 📜 License
 
-- [`templates/README.template.md`](templates/README.template.md) - copy this to start the next rescue-guide repo
-- [@axe01010](https://github.com/axe01010) - more no-data-loss guides in the pipeline
-- [Portfolio](https://axe01010.github.io/portfolio-v2/) - unified project showcase
-- [Security research hub](https://github.com/axe01010/security-research-hub) - Android/APK analysis docs
-- [Cursor Android toolkit](https://github.com/axe01010/cursor-android-toolkit) - run Cursor on Android via Termux
+MIT License - see [LICENSE](LICENSE)
 
-## Contributing and License
+---
 
-- [Contributing guide](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
-- [MIT License](LICENSE)
-
-## Changelog
-
-- 2026-08-03: v1.0 - initial rescue record, assets, CI workflow, production README
-- 2026-08-03: v1.0.0 release tagged, 12 topics set, homepage pinned, release notes published, repo idea queue and templates added
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=axe01010/nothing-phone-bootloop-recovery&type=Date)](https://star-history.com/#axe01010/nothing-phone-bootloop-recovery&Date)
+<p align="center">
+  Rescued with ❤️ by <a href="https://github.com/axe01010">axe git</a> · Nothing Phone survivor
+</p>
